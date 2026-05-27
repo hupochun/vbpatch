@@ -2,6 +2,7 @@ import { exec, fullScreen, moduleInfo, spawn, toast } from "./kernelsu.js";
 
 const state = {
   partitions: [],
+  images: [],
   running: false,
 };
 
@@ -11,8 +12,12 @@ const els = {
   partitionTableBody: document.getElementById("partition-table-body"),
   sourceSelect: document.getElementById("source-select"),
   targetSelect: document.getElementById("target-select"),
+  targetImage: document.getElementById("target-image"),
+  imageList: document.getElementById("image-list"),
+  scanImagesBtn: document.getElementById("scan-images-btn"),
   outputDir: document.getElementById("output-dir"),
   flashToggle: document.getElementById("flash-toggle"),
+  flashTargetField: document.getElementById("flash-target-field"),
   refreshBtn: document.getElementById("refresh-btn"),
   patchForm: document.getElementById("patch-form"),
   patchBtn: document.getElementById("patch-btn"),
@@ -84,6 +89,7 @@ function setRunning(running) {
   state.running = running;
   els.patchBtn.disabled = running;
   els.refreshBtn.disabled = running;
+  els.scanImagesBtn.disabled = running;
 }
 
 function renderPartitions() {
@@ -125,6 +131,16 @@ function renderSelects() {
 
   fillSelect(els.sourceSelect, sources, ["vbmeta_a", "vbmeta", "vbmeta_b", "boot_a", "init_boot_a"]);
   fillSelect(els.targetSelect, targets, ["boot_a", "init_boot_a", "boot", "init_boot", "vendor_boot_a"]);
+}
+
+function renderImages() {
+  els.imageList.innerHTML = state.images
+    .map((item) => `<option value="${item.path}" label="${item.kind} · ${formatBytes(item.size)}"></option>`)
+    .join("");
+
+  if (!els.targetImage.value && state.images[0]) {
+    els.targetImage.value = state.images[0].path;
+  }
 }
 
 function parseList(stdout) {
@@ -175,13 +191,60 @@ async function refreshPartitions() {
       throw new Error(result.stderr || result.stdout || "扫描失败");
     }
     parseList(result.stdout);
-    setLog("扫描完成，可以开始选择源分区和目标分区。");
+    setLog("分区扫描完成，可以选择源分区和目标镜像。");
   } catch (error) {
     state.partitions = [];
     renderPartitions();
     els.bynameDir.textContent = "扫描失败";
     setLog(`扫描失败：${error.message}`);
     toast("分区扫描失败");
+  }
+}
+
+function parseImageList(stdout) {
+  const images = [];
+
+  stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .forEach((line) => {
+      const parts = line.split("|");
+      if (parts[0] !== "IMG") {
+        return;
+      }
+
+      const [_, path, kind, size, origSize, vbmetaOffset, vbmetaSize] = parts;
+      images.push({
+        path,
+        kind,
+        size: Number(size),
+        origSize: Number(origSize),
+        vbmetaOffset: Number(vbmetaOffset),
+        vbmetaSize: Number(vbmetaSize),
+      });
+    });
+
+  images.sort((a, b) => a.path.localeCompare(b.path));
+  state.images = images;
+  renderImages();
+}
+
+async function refreshImages() {
+  appendLog("正在扫描下载目录里的 .img 文件...");
+
+  try {
+    const result = await exec("sh /data/adb/modules/vbpatch/scripts/backend.sh list-images");
+    if (result.errno !== 0) {
+      throw new Error(result.stderr || result.stdout || "镜像扫描失败");
+    }
+    parseImageList(result.stdout);
+    appendLog(state.images.length ? `发现 ${state.images.length} 个镜像文件。` : "未在下载目录发现 .img 文件，可以手动输入路径。");
+  } catch (error) {
+    state.images = [];
+    renderImages();
+    appendLog(`镜像扫描失败：${error.message}`);
+    toast("镜像扫描失败");
   }
 }
 
@@ -203,7 +266,7 @@ function showResultCard(result) {
     lines.push(`<p>输出镜像：${result.output}</p>`);
   }
   if (result.backup) {
-    lines.push(`<p>目标分区备份：${result.backup}</p>`);
+    lines.push(`<p>回写分区备份：${result.backup}</p>`);
   }
   lines.push(`<p>是否已回写：${result.flashed === "1" ? "是" : "否"}</p>`);
   els.resultCard.innerHTML = lines.join("");
@@ -247,22 +310,23 @@ async function handlePatchSubmit(event) {
   }
 
   const source = els.sourceSelect.value;
+  const targetImage = els.targetImage.value.trim();
   const target = els.targetSelect.value;
   const outputDir = els.outputDir.value.trim() || "/sdcard/Download/vbpatch";
   const flashBack = els.flashToggle.checked ? "1" : "0";
 
-  if (!source || !target) {
-    toast("请先选择源分区和目标分区");
+  if (!source || !targetImage) {
+    toast("请先选择源分区和目标镜像");
     return;
   }
 
-  if (source === target) {
-    toast("源分区和目标分区不能相同");
+  if (els.flashToggle.checked && !target) {
+    toast("请先选择回写分区");
     return;
   }
 
   if (els.flashToggle.checked) {
-    const confirmed = window.confirm("即将直接回写真实分区，继续吗？");
+    const confirmed = window.confirm("即将把修补后的镜像回写到真实分区，继续吗？");
     if (!confirmed) {
       return;
     }
@@ -275,11 +339,12 @@ async function handlePatchSubmit(event) {
   const command = [
     "sh",
     "/data/adb/modules/vbpatch/scripts/backend.sh",
-    "patch",
+    "patch-image",
     shellEscape(source),
-    shellEscape(target),
+    shellEscape(targetImage),
     shellEscape(outputDir),
     flashBack,
+    shellEscape(target),
   ].join(" ");
 
   try {
@@ -304,12 +369,17 @@ function init() {
   }
 
   els.refreshBtn.addEventListener("click", refreshPartitions);
+  els.scanImagesBtn.addEventListener("click", refreshImages);
   els.patchForm.addEventListener("submit", handlePatchSubmit);
 
   const savedOutputDir = localStorage.getItem("vbpatch.outputDir");
+  const savedTargetImage = localStorage.getItem("vbpatch.targetImage");
   const savedFlash = localStorage.getItem("vbpatch.flashBack");
   if (savedOutputDir) {
     els.outputDir.value = savedOutputDir;
+  }
+  if (savedTargetImage) {
+    els.targetImage.value = savedTargetImage;
   }
   if (savedFlash === "1") {
     els.flashToggle.checked = true;
@@ -319,11 +389,19 @@ function init() {
     localStorage.setItem("vbpatch.outputDir", els.outputDir.value.trim());
   });
 
+  els.targetImage.addEventListener("change", () => {
+    localStorage.setItem("vbpatch.targetImage", els.targetImage.value.trim());
+  });
+
   els.flashToggle.addEventListener("change", () => {
+    els.flashTargetField.classList.toggle("hidden", !els.flashToggle.checked);
     localStorage.setItem("vbpatch.flashBack", els.flashToggle.checked ? "1" : "0");
   });
 
+  els.flashTargetField.classList.toggle("hidden", !els.flashToggle.checked);
+
   refreshPartitions();
+  refreshImages();
 }
 
 init();

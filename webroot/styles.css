@@ -270,6 +270,13 @@ input {
   gap: 8px;
 }
 
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
 .field span {
   font-weight: 700;
 }
@@ -335,6 +342,11 @@ input {
   font-size: 14px;
 }
 
+.compact-btn {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
 .primary-btn {
   background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   color: #fff9f2;
@@ -378,6 +390,10 @@ input {
   display: none;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .result-card strong {
   display: block;
   margin-bottom: 8px;
@@ -410,5 +426,9 @@ input {
   .partition-table td {
     padding: 12px 10px;
     font-size: 12px;
+  }
+
+  .field-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

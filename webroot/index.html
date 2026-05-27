@@ -16,7 +16,7 @@
           <p class="lede">
             不再手动翻目录找原分区镜像。模块会从当前设备的
             <code>/dev/block/.../by-name</code>
-            读取真实分区，生成修补后的镜像，必要时也能直接回写目标分区。
+            读取源分区，再把选中的目标镜像修补成新的镜像文件。
           </p>
         </div>
         <div class="hero-meta">
@@ -40,7 +40,7 @@
             </div>
             <button id="refresh-btn" class="ghost-btn" type="button">重新扫描</button>
           </div>
-          <p class="hint">默认只列出常见可修补的 AVB 相关分区，如 <code>vbmeta*</code>、<code>boot*</code>、<code>init_boot*</code>、<code>vendor_boot*</code>。</p>
+          <p class="hint">这里的分区用于提取 VBMeta，默认只列出常见 AVB 相关分区。</p>
           <div id="partition-table-wrap" class="table-wrap">
             <table class="partition-table">
               <thead>
@@ -74,9 +74,13 @@
             </label>
 
             <label class="field">
-              <span>目标分区</span>
-              <select id="target-select" required></select>
-              <small>修补后的镜像会按这个分区的大小与布局生成。</small>
+              <span>目标镜像</span>
+              <div class="field-row">
+                <input id="target-image" type="text" list="image-list" placeholder="/sdcard/Download/boot.img" spellcheck="false" required>
+                <button id="scan-images-btn" class="ghost-btn compact-btn" type="button">扫描</button>
+              </div>
+              <datalist id="image-list"></datalist>
+              <small>这里选择你真正要修补的 <code>.img</code> 文件。会扫描下载目录，也可以直接手动输入完整路径。</small>
             </label>
 
             <label class="field">
@@ -87,7 +91,13 @@
 
             <label class="toggle-row">
               <input id="flash-toggle" type="checkbox">
-              <span>修补完成后直接回写目标分区（会先自动备份目标分区）</span>
+              <span>修补完成后直接回写到分区（会先自动备份该分区）</span>
+            </label>
+
+            <label id="flash-target-field" class="field hidden">
+              <span>回写分区</span>
+              <select id="target-select"></select>
+              <small>只有勾选回写时才会使用。普通修补只会输出新的镜像文件。</small>
             </label>
 
             <div class="notice danger">

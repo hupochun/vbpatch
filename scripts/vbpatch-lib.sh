@@ -6,6 +6,7 @@ STATE_DIR="$MODDIR/var"
 LOG_DIR="$STATE_DIR/log"
 TMP_DIR="$STATE_DIR/tmp"
 DEFAULT_OUT_DIR="/sdcard/Download/vbpatch"
+IMAGE_SCAN_DIRS="/sdcard/Download /sdcard/Download/vbpatch /storage/emulated/0/Download /storage/emulated/0/Download/vbpatch"
 
 mkdir -p "$STATE_DIR" "$LOG_DIR" "$TMP_DIR" 2>/dev/null
 
@@ -184,6 +185,35 @@ list_partitions() {
   done | sort
 }
 
+list_images() {
+  local scan_dirs dir pattern img probe size seen_file real_img
+  scan_dirs=${1:-$IMAGE_SCAN_DIRS}
+  seen_file="$TMP_DIR/seen-images.$$"
+  : > "$seen_file"
+  trap 'rm -f "$seen_file"' EXIT INT TERM
+
+  for dir in $scan_dirs; do
+    [ -d "$dir" ] || continue
+    printf 'META|image_dir|%s\n' "$dir"
+
+    for pattern in "$dir"/*.img "$dir"/*.IMG "$dir"/*/*.img "$dir"/*/*.IMG; do
+      [ -f "$pattern" ] || continue
+      real_img=$(resolve_path "$pattern" 2>/dev/null)
+      [ -n "$real_img" ] || real_img=$pattern
+      if grep -Fqx "$real_img" "$seen_file" 2>/dev/null; then
+        continue
+      fi
+      printf '%s\n' "$real_img" >> "$seen_file"
+      size=$(get_size_bytes "$real_img") || size=0
+      probe=$(probe_avb "$real_img") || probe="none|$size|0|0|0"
+      printf 'IMG|%s|%s\n' "$real_img" "$probe"
+    done
+  done | sort
+
+  rm -f "$seen_file"
+  trap - EXIT INT TERM
+}
+
 copy_prefix() {
   local src bytes out
   src=$1
@@ -326,6 +356,55 @@ patch_from_partitions() {
     cat "$tgt_path" > "$backup_img" || fail "备份目标分区失败"
     log "正在将修补后的镜像回写到目标分区"
     dd if="$out_img" of="$tgt_path" bs=4M conv=fsync 2>/dev/null || fail "回写目标分区失败"
+    log "回写完成，请自行决定是否重启验证"
+  fi
+
+  printf 'RESULT|output|%s\n' "$out_img"
+  if [ "$flash_back" = "1" ]; then
+    printf 'RESULT|backup|%s\n' "$backup_img"
+    printf 'RESULT|flashed|1\n'
+  else
+    printf 'RESULT|flashed|0\n'
+  fi
+}
+
+patch_partition_to_image() {
+  local src_name tgt_img output_dir flash_back flash_part byname_dir src_path timestamp base name out_img backup_img flash_path
+  src_name=$1
+  tgt_img=$2
+  output_dir=${3:-$DEFAULT_OUT_DIR}
+  flash_back=${4:-0}
+  flash_part=${5:-}
+
+  byname_dir=$(find_byname_dir) || fail "未找到 by-name 分区目录"
+  src_path=$(partition_path "$byname_dir" "$src_name") || fail "源分区不存在: $src_name"
+
+  [ -f "$tgt_img" ] || fail "目标镜像不存在: $tgt_img"
+  mkdir -p "$output_dir" || fail "无法创建输出目录: $output_dir"
+
+  timestamp=$(date +%Y%m%d-%H%M%S 2>/dev/null)
+  [ -n "$timestamp" ] || timestamp=$(busybox date +%Y%m%d-%H%M%S 2>/dev/null)
+  [ -n "$timestamp" ] || timestamp=now
+
+  base=${tgt_img##*/}
+  name=${base%.*}
+  [ -n "$name" ] || name=target
+  out_img="$output_dir/${name}_patched_${timestamp}.img"
+
+  log "源分区: $src_name -> $src_path"
+  log "目标镜像: $tgt_img"
+  log "输出目录: $output_dir"
+  patch_core "$src_path" "$tgt_img" "$out_img"
+
+  if [ "$flash_back" = "1" ]; then
+    [ -n "$flash_part" ] || fail "已启用回写，但未指定目标分区"
+    flash_path=$(partition_path "$byname_dir" "$flash_part") || fail "回写分区不存在: $flash_part"
+    backup_img="$output_dir/${flash_part}_backup_${timestamp}.img"
+    log "回写分区: $flash_part -> $flash_path"
+    log "正在备份回写分区到: $backup_img"
+    cat "$flash_path" > "$backup_img" || fail "备份回写分区失败"
+    log "正在将修补后的镜像回写到分区"
+    dd if="$out_img" of="$flash_path" bs=4M conv=fsync 2>/dev/null || fail "回写分区失败"
     log "回写完成，请自行决定是否重启验证"
   fi
 

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VBMeta Patch</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">KernelSU WebUI</p>
+          <h1>直接从手机分区提取并移植 VBMeta</h1>
+          <p class="lede">
+            不再手动翻目录找原分区镜像。模块会从当前设备的
+            <code>/dev/block/.../by-name</code>
+            读取真实分区，生成修补后的镜像，必要时也能直接回写目标分区。
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">模块信息</span>
+            <strong id="module-info">读取中...</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">分区目录</span>
+            <strong id="byname-dir">等待扫描</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="content-grid">
+        <section class="panel panel-list">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">步骤 1</p>
+              <h2>扫描可用分区</h2>
+            </div>
+            <button id="refresh-btn" class="ghost-btn" type="button">重新扫描</button>
+          </div>
+          <p class="hint">默认只列出常见可修补的 AVB 相关分区，如 <code>vbmeta*</code>、<code>boot*</code>、<code>init_boot*</code>、<code>vendor_boot*</code>。</p>
+          <div id="partition-table-wrap" class="table-wrap">
+            <table class="partition-table">
+              <thead>
+                <tr>
+                  <th>分区名</th>
+                  <th>AVB</th>
+                  <th>分区大小</th>
+                  <th>VBMeta 大小</th>
+                </tr>
+              </thead>
+              <tbody id="partition-table-body">
+                <tr><td colspan="4" class="empty">正在扫描分区...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel panel-form">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">步骤 2</p>
+              <h2>执行修补</h2>
+            </div>
+          </div>
+
+          <form id="patch-form" class="form-stack">
+            <label class="field">
+              <span>源分区</span>
+              <select id="source-select" required></select>
+              <small>从这里提取 VBMeta。</small>
+            </label>
+
+            <label class="field">
+              <span>目标分区</span>
+              <select id="target-select" required></select>
+              <small>修补后的镜像会按这个分区的大小与布局生成。</small>
+            </label>
+
+            <label class="field">
+              <span>输出目录</span>
+              <input id="output-dir" type="text" value="/sdcard/Download/vbpatch" spellcheck="false">
+              <small>默认保存到下载目录下的 <code>vbpatch</code> 文件夹。</small>
+            </label>
+
+            <label class="toggle-row">
+              <input id="flash-toggle" type="checkbox">
+              <span>修补完成后直接回写目标分区（会先自动备份目标分区）</span>
+            </label>
+
+            <div class="notice danger">
+              <strong>注意：</strong>
+              直接回写会修改真实分区。建议先仅导出镜像验证，再决定是否回写。
+            </div>
+
+            <div class="actions">
+              <button id="patch-btn" class="primary-btn" type="submit">开始修补</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">步骤 3</p>
+              <h2>运行日志</h2>
+            </div>
+          </div>
+          <pre id="log-view" class="log-view">等待操作...</pre>
+          <div id="result-card" class="result-card hidden"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

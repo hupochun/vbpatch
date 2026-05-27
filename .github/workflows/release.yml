@@ -1,0 +1,78 @@
+name: Build And Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v1.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release tag
+        id: prep
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+            if ! git rev-parse "$tag" >/dev/null 2>&1; then
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag "$tag"
+              git push origin "$tag"
+            fi
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build module zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build-module.sh
+          ./build-module.sh
+
+      - name: Read module version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk -F= '/^version=/{print $2}' module.prop)"
+          zip_path="dist/vbpatch-ksu-webui-${version}.zip"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.prep.outputs.tag }}"
+          zip_path="${{ steps.version.outputs.zip_path }}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$zip_path" --clobber
+          else
+            gh release create "$tag" "$zip_path" \
+              --title "$tag" \
+              --notes "Automated release for VBMeta Patch WebUI."
+          fi

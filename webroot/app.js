@@ -57,6 +57,29 @@ function avbLabel(kind) {
   return '<span class="pill pill-none">None</span>';
 }
 
+function formatModuleInfo(raw) {
+  if (!raw) {
+    return "VBMeta Patch WebUI";
+  }
+
+  let info = raw;
+  if (typeof raw === "string") {
+    try {
+      info = JSON.parse(raw);
+    } catch (error) {
+      return raw;
+    }
+  }
+
+  if (typeof info !== "object" || info === null) {
+    return String(info);
+  }
+
+  const name = info.name || info.id || "VBMeta Patch WebUI";
+  const version = info.version ? ` v${info.version}` : "";
+  return `${name}${version}`;
+}
+
 function setRunning(running) {
   state.running = running;
   els.patchBtn.disabled = running;
@@ -275,9 +298,9 @@ async function handlePatchSubmit(event) {
 function init() {
   fullScreen(true);
   try {
-    els.moduleInfo.textContent = moduleInfo() || "vbpatch";
+    els.moduleInfo.textContent = formatModuleInfo(moduleInfo());
   } catch (error) {
-    els.moduleInfo.textContent = "vbpatch";
+    els.moduleInfo.textContent = "VBMeta Patch WebUI";
   }
 
   els.refreshBtn.addEventListener("click", refreshPartitions);
